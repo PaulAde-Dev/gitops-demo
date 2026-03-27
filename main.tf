@@ -1,9 +1,5 @@
 locals {
   eks_kubernetes_version = var.kubernetes_version
-
-  # If this Terraform state is not responsible for creating the ECR repository,
-  # we read it via `data.aws_ecr_repository.existing`.
-  ecr_repository_arn = var.ecr_enabled ? (var.ecr_create ? module.ecr[0].repository_arn : data.aws_ecr_repository.existing[0].arn) : ""
 }
 
 data "aws_caller_identity" "current" {}
@@ -13,16 +9,15 @@ data "aws_region" "current" {}
 module "vpc" {
   source = "./modules/vpc"
 
-  name          = var.cluster_name
+  name         = var.cluster_name
   cluster_name = var.cluster_name
 
-  vpc_cidr            = var.vpc_cidr
-  az_count            = var.az_count
+  vpc_cidr             = var.vpc_cidr
+  az_count             = var.az_count
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
 }
 
-# If `ecr_create` is false, this state expects the ECR repo already exists.
 data "aws_ecr_repository" "existing" {
   count = var.ecr_enabled && !var.ecr_create ? 1 : 0
   name  = var.ecr_repository_name
@@ -33,11 +28,11 @@ module "ecr" {
 
   count = var.ecr_enabled && var.ecr_create ? 1 : 0
 
-  repository_name         = var.ecr_repository_name
-  image_tag_mutability    = "MUTABLE"
-  scan_on_push            = true
-  encryption_type         = "AES256"
-  image_retention_count  = var.ecr_image_retention_count
+  repository_name       = var.ecr_repository_name
+  image_tag_mutability  = "MUTABLE"
+  scan_on_push          = true
+  encryption_type       = "AES256"
+  image_retention_count = var.ecr_image_retention_count
 
   tags = var.tags
 }
@@ -48,37 +43,32 @@ module "eks" {
   cluster_name       = var.cluster_name
   kubernetes_version = local.eks_kubernetes_version
 
-  subnet_ids              = module.vpc.private_subnet_ids
-  node_group_subnet_ids  = module.vpc.private_subnet_ids
-  endpoint_private_access = var.eks_endpoint_private_access
-  endpoint_public_access  = var.eks_endpoint_public_access
-  public_access_cidrs     = var.eks_public_access_cidrs
+  subnet_ids                 = module.vpc.private_subnet_ids
+  node_group_subnet_ids      = module.vpc.private_subnet_ids
+  endpoint_private_access    = var.eks_endpoint_private_access
+  endpoint_public_access     = var.eks_endpoint_public_access
+  public_access_cidrs        = var.eks_public_access_cidrs
   cluster_security_group_ids = var.eks_cluster_security_group_ids
 
   enabled_cluster_log_types = var.eks_enabled_cluster_log_types
-  log_retention_days         = var.eks_log_retention_days
+  log_retention_days        = var.eks_log_retention_days
 
-  managed_addons_enabled = var.eks_managed_addons_enabled
-  managed_addons         = var.eks_managed_addons
+  managed_addons_enabled   = var.eks_managed_addons_enabled
+  managed_addons_pre_node  = var.eks_managed_addons_pre_node
+  managed_addons_post_node = var.eks_managed_addons_post_node
 
-  default_node_group_name = var.default_node_pool_name
+  default_node_group_name           = var.default_node_pool_name
   default_node_group_instance_types = [var.default_node_pool_vm_size]
   default_node_group_desired_size   = var.default_node_pool_node_count
-  default_node_group_min_size        = var.enable_auto_scaling ? var.default_node_pool_min_count : var.default_node_pool_node_count
-  default_node_group_max_size        = var.enable_auto_scaling ? var.default_node_pool_max_count : var.default_node_pool_node_count
+  default_node_group_min_size       = var.enable_auto_scaling ? var.default_node_pool_min_count : var.default_node_pool_node_count
+  default_node_group_max_size       = var.enable_auto_scaling ? var.default_node_pool_max_count : var.default_node_pool_node_count
   default_node_group_capacity_type  = var.default_node_group_capacity_type
   default_node_group_disk_size      = var.default_node_group_disk_size
 
   enable_irsa = true
 
-  ecr_repository_arn = local.ecr_repository_arn
-
   tags = var.tags
 }
-
-# =============================================================================
-# Karpenter (optional)
-# =============================================================================
 
 resource "aws_sqs_queue" "karpenter_interruption" {
   count = var.karpenter_enabled ? 1 : 0
@@ -94,7 +84,7 @@ resource "aws_cloudwatch_event_rule" "karpenter_spot_interruption" {
 
   name = "${var.cluster_name}-karpenter-spot-interruption"
   event_pattern = jsonencode({
-    source      = ["aws.ec2"]
+    source        = ["aws.ec2"]
     "detail-type" = ["EC2 Spot Instance Interruption Warning"]
   })
 }
@@ -113,8 +103,8 @@ resource "aws_iam_role" "karpenter_node" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = "sts:AssumeRole"
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
       Principal = { Service = "ec2.amazonaws.com" }
     }]
   })
@@ -232,8 +222,7 @@ resource "aws_iam_role_policy" "karpenter_controller" {
   })
 }
 
-# Allow Karpenter-managed nodes to join the cluster
-resource "kubernetes_config_map" "aws_auth" {
+resource "kubernetes_config_map_v1" "aws_auth" {
   count = var.karpenter_enabled ? 1 : 0
 
   metadata {
@@ -271,18 +260,18 @@ module "karpenter" {
   create_namespace = true
 
   set_values = {
-    "serviceAccount.create"                                        = "true"
-    "serviceAccount.name"                                          = "karpenter"
-    "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"     = aws_iam_role.karpenter_controller[0].arn
-    "settings.clusterName"                                         = module.eks.cluster_name
-    "settings.clusterEndpoint"                                     = module.eks.cluster_endpoint
-    "settings.interruptionQueue"                                   = aws_sqs_queue.karpenter_interruption[0].name
-    "settings.aws.defaultInstanceProfile"                          = aws_iam_instance_profile.karpenter_node[0].name
+    "serviceAccount.create"                                     = "true"
+    "serviceAccount.name"                                       = "karpenter"
+    "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn" = aws_iam_role.karpenter_controller[0].arn
+    "settings.clusterName"                                      = module.eks.cluster_name
+    "settings.clusterEndpoint"                                  = module.eks.cluster_endpoint
+    "settings.interruptionQueue"                                = aws_sqs_queue.karpenter_interruption[0].name
+    "settings.aws.defaultInstanceProfile"                       = aws_iam_instance_profile.karpenter_node[0].name
   }
 
   depends_on = [
     module.eks,
-    kubernetes_config_map.aws_auth
+    kubernetes_config_map_v1.aws_auth
   ]
 }
 
@@ -298,12 +287,12 @@ module "nginx_ingress" {
   create_namespace = var.nginx_ingress_create_namespace
 
   set_values = {
-    "controller.replicaCount"                                                                                       = tostring(var.nginx_ingress_replica_count)
-    "controller.service.type"                                                                                       = "LoadBalancer"
-    "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-healthcheck-path"          = "/healthz"
-    "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"                     = "nlb"
-    "controller.admissionWebhooks.enabled"                                                                          = "true"
-    "controller.metrics.enabled"                                                                                    = "true"
+    "controller.replicaCount"                                                                            = tostring(var.nginx_ingress_replica_count)
+    "controller.service.type"                                                                            = "LoadBalancer"
+    "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-healthcheck-path" = "/healthz"
+    "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"             = "nlb"
+    "controller.admissionWebhooks.enabled"                                                               = "true"
+    "controller.metrics.enabled"                                                                         = "true"
   }
 
   depends_on = [
@@ -311,7 +300,6 @@ module "nginx_ingress" {
   ]
 }
 
-# ArgoCD for GitOps continuous delivery
 module "argocd" {
   source = "./modules/helm_release"
   count  = var.argocd_enabled ? 1 : 0
@@ -374,7 +362,6 @@ module "argocd" {
   ]
 }
 
-# KEDA for event-driven pod autoscaling
 module "keda" {
   source = "./modules/helm_release"
   count  = var.keda_enabled ? 1 : 0

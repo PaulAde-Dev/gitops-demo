@@ -7,14 +7,14 @@ tags = {
 
 aws_region = "ca-central-1"
 
-vpc_cidr = "10.0.0.0/16"
-az_count = 2
+vpc_cidr             = "10.0.0.0/16"
+az_count             = 2
 public_subnet_cidrs  = ["10.0.0.0/24", "10.0.1.0/24"]
 private_subnet_cidrs = ["10.0.2.0/24", "10.0.3.0/24"]
 
-eks_endpoint_private_access = true
-eks_endpoint_public_access  = true
-eks_public_access_cidrs     = ["0.0.0.0/0"]
+eks_endpoint_private_access    = true
+eks_endpoint_public_access     = true
+eks_public_access_cidrs        = ["0.0.0.0/0"]
 eks_cluster_security_group_ids = []
 eks_enabled_cluster_log_types  = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 eks_log_retention_days         = 30
@@ -23,8 +23,9 @@ default_node_group_capacity_type = "ON_DEMAND"
 default_node_group_disk_size     = 50
 ecr_image_retention_count        = 50
 
-eks_managed_addons_enabled = true
-eks_managed_addons         = ["vpc-cni", "coredns", "kube-proxy"]
+eks_managed_addons_enabled   = true
+eks_managed_addons_pre_node  = ["kube-proxy", "vpc-cni"]
+eks_managed_addons_post_node = ["coredns"]
 
 
 cluster_name       = "eks-dev-cluster"
@@ -53,11 +54,11 @@ ecr_repository_name = "sample-app"
 
 ecr_create = true
 
-karpenter_enabled = true
-karpenter_namespace                 = "karpenter"
-karpenter_release_name              = "karpenter"
-karpenter_chart_version             = null
-karpenter_interruption_queue_name   = "karpenter-interruption"
+karpenter_enabled                 = true
+karpenter_namespace               = "karpenter"
+karpenter_release_name            = "karpenter"
+karpenter_chart_version           = null
+karpenter_interruption_queue_name = "karpenter-interruption"
 
 # ArgoCD Configuration
 argocd_enabled                 = true

@@ -69,7 +69,7 @@ variable "default_node_group_disk_size" {
 }
 
 variable "ecr_create" {
-  description = "Whether this Terraform state should create the ECR repository. Use false in non-owner environments."
+  description = "Create the ECR repository in this workspace."
   type        = bool
 }
 
@@ -163,12 +163,8 @@ variable "nginx_ingress_replica_count" {
   type        = number
 }
 
-# =============================================================================
-# ECR Variables
-# =============================================================================
-
 variable "ecr_enabled" {
-  description = "Enable ECR repository integration (create or read repo and configure node pull permissions)."
+  description = "Use ECR (create or reference repo; node IAM scoped to pulls)."
   type        = bool
 }
 
@@ -177,52 +173,45 @@ variable "ecr_repository_name" {
   type        = string
 }
 
-# =============================================================================
-# EKS Managed Add-ons
-# =============================================================================
-
 variable "eks_managed_addons_enabled" {
-  description = "Manage core EKS add-ons (vpc-cni, coredns, kube-proxy) via aws_eks_addon."
+  description = "Manage EKS add-ons with aws_eks_addon."
   type        = bool
 }
 
-variable "eks_managed_addons" {
-  description = "List of EKS managed add-ons to install/manage."
+variable "eks_managed_addons_pre_node" {
+  description = "Add-ons before the node group (kube-proxy and vpc-cni)."
   type        = list(string)
 }
 
-# =============================================================================
-# Karpenter Variables
-# =============================================================================
+variable "eks_managed_addons_post_node" {
+  description = "Add-ons after the node group (e.g. coredns)."
+  type        = list(string)
+}
 
 variable "karpenter_enabled" {
-  description = "Enable Karpenter installation and prerequisites."
+  description = "Install Karpenter and related AWS resources."
   type        = bool
 }
 
 variable "karpenter_namespace" {
-  description = "Namespace to install Karpenter into."
+  description = "Karpenter Helm namespace."
   type        = string
 }
 
 variable "karpenter_release_name" {
-  description = "Helm release name for Karpenter."
+  description = "Karpenter Helm release name."
   type        = string
 }
 
 variable "karpenter_chart_version" {
-  description = "Karpenter Helm chart version (optional)."
+  description = "Karpenter Helm chart version."
   type        = string
 }
 
 variable "karpenter_interruption_queue_name" {
-  description = "SQS queue name for Karpenter interruption handling."
+  description = "SQS queue name for spot interruption events."
   type        = string
 }
-
-# =============================================================================
-# ArgoCD Variables
-# =============================================================================
 
 variable "argocd_enabled" {
   description = "Enable ArgoCD installation"
@@ -308,10 +297,6 @@ variable "argocd_dex_enabled" {
   description = "Enable Dex for ArgoCD authentication"
   type        = bool
 }
-
-# =============================================================================
-# KEDA (Kubernetes Event-Driven Autoscaling) Variables
-# =============================================================================
 
 variable "keda_enabled" {
   description = "Enable KEDA installation for event-driven pod autoscaling"

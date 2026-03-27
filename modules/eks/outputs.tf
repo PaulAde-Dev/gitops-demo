@@ -83,7 +83,6 @@ output "node_group_status" {
   value       = aws_eks_node_group.this.status
 }
 
-# Kubeconfig helper output
 output "kubeconfig_command" {
   description = "AWS CLI command to update kubeconfig"
   value       = "aws eks update-kubeconfig --region <REGION> --name ${aws_eks_cluster.this.name}"

@@ -8,15 +8,15 @@ tags = {
 # Region / VPC
 aws_region = "ca-central-1"
 
-vpc_cidr = "10.20.0.0/16"
-az_count = 2
+vpc_cidr             = "10.20.0.0/16"
+az_count             = 2
 public_subnet_cidrs  = ["10.20.0.0/24", "10.20.1.0/24"]
 private_subnet_cidrs = ["10.20.2.0/24", "10.20.3.0/24"]
 
 # EKS API access
-eks_endpoint_private_access = true
-eks_endpoint_public_access  = true
-eks_public_access_cidrs     = ["0.0.0.0/0"]
+eks_endpoint_private_access    = true
+eks_endpoint_public_access     = true
+eks_public_access_cidrs        = ["0.0.0.0/0"]
 eks_cluster_security_group_ids = []
 eks_enabled_cluster_log_types  = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 eks_log_retention_days         = 30
@@ -26,8 +26,9 @@ default_node_group_capacity_type = "ON_DEMAND"
 default_node_group_disk_size     = 50
 ecr_image_retention_count        = 50
 
-eks_managed_addons_enabled = true
-eks_managed_addons         = ["vpc-cni", "coredns", "kube-proxy"]
+eks_managed_addons_enabled   = true
+eks_managed_addons_pre_node  = ["kube-proxy", "vpc-cni"]
+eks_managed_addons_post_node = ["coredns"]
 
 # EKS Cluster Configuration
 cluster_name       = "eks-prod-cluster"
@@ -36,9 +37,9 @@ kubernetes_version = "1.32"
 # Node Pool Configuration - Production sizing
 default_node_pool_name       = "system"
 default_node_pool_vm_size    = "t3.large" # Larger instance types for production
-default_node_pool_node_count = 3                 # Higher initial count
-default_node_pool_min_count  = 3                 # Minimum 3 nodes for HA
-default_node_pool_max_count  = 10                # Allow scaling to 10 nodes
+default_node_pool_node_count = 3          # Higher initial count
+default_node_pool_min_count  = 3          # Minimum 3 nodes for HA
+default_node_pool_max_count  = 10         # Allow scaling to 10 nodes
 enable_auto_scaling          = true
 
 # NGINX Ingress Controller

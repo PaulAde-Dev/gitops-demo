@@ -26,8 +26,9 @@ default_node_group_capacity_type = "ON_DEMAND"
 default_node_group_disk_size     = 50
 ecr_image_retention_count        = 50
 
-eks_managed_addons_enabled = true
-eks_managed_addons         = ["vpc-cni", "coredns", "kube-proxy"]
+eks_managed_addons_enabled   = true
+eks_managed_addons_pre_node  = ["kube-proxy", "vpc-cni"]
+eks_managed_addons_post_node = ["coredns"]
 
 # EKS Cluster Settings
 cluster_name       = "eks-dev-cluster"

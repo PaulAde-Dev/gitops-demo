@@ -56,16 +56,28 @@ variable "log_retention_days" {
 }
 
 variable "managed_addons_enabled" {
-  description = "Manage core EKS add-ons (vpc-cni, coredns, kube-proxy) via aws_eks_addon."
+  description = "Manage EKS add-ons with aws_eks_addon."
   type        = bool
 }
 
-variable "managed_addons" {
-  description = "List of EKS managed add-ons to install/manage."
+variable "managed_addons_pre_node" {
+  description = "Add-ons before the node group (kube-proxy and vpc-cni; kube-proxy is created first)."
+  type        = list(string)
+
+  validation {
+    condition = (
+      !contains(var.managed_addons_pre_node, "vpc-cni") ||
+      contains(var.managed_addons_pre_node, "kube-proxy")
+    )
+    error_message = "If vpc-cni is listed, kube-proxy must be listed too."
+  }
+}
+
+variable "managed_addons_post_node" {
+  description = "Add-ons after the node group (e.g. coredns)."
   type        = list(string)
 }
 
-# Encryption configuration
 variable "cluster_encryption_config_enabled" {
   description = "Enable envelope encryption for Kubernetes secrets"
   type        = bool
@@ -84,7 +96,6 @@ variable "cluster_encryption_config_resources" {
   default     = ["secrets"]
 }
 
-# Default Node Group configuration
 variable "default_node_group_name" {
   description = "Name of the default node group"
   type        = string
@@ -153,17 +164,10 @@ variable "default_node_group_taints" {
   default = []
 }
 
-# IRSA (IAM Roles for Service Accounts)
 variable "enable_irsa" {
   description = "Enable IAM Roles for Service Accounts (IRSA)"
   type        = bool
   default     = true
-}
-
-variable "ecr_repository_arn" {
-  description = "ECR repository ARN to allow node image pulls from (least-privilege). Empty string disables ECR pull policy statements."
-  type        = string
-  default     = ""
 }
 
 variable "tags" {

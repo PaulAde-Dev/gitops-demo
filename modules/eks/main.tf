@@ -1,4 +1,3 @@
-# IAM Role for EKS Cluster
 resource "aws_iam_role" "cluster" {
   name = "${var.cluster_name}-cluster-role"
 
@@ -28,7 +27,6 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSVPCResourceControlle
   role       = aws_iam_role.cluster.name
 }
 
-# IAM Role for Node Group
 resource "aws_iam_role" "node_group" {
   name = "${var.cluster_name}-node-group-role"
 
@@ -58,46 +56,11 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.node_group.name
 }
 
-resource "aws_iam_role_policy" "node_group_ecr_pull" {
-  name = "${var.cluster_name}-node-group-ecr-pull"
-  role = aws_iam_role.node_group.id
-
-  # Avoid `count` because the repository ARN can be unknown during plan.
-  # If `ecr_repository_arn` is empty, we produce a policy with no ECR statements.
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = concat(
-      var.ecr_repository_arn != "" ? [
-        {
-          Sid      = "ECRAuthToken"
-          Effect   = "Allow"
-          Action   = ["ecr:GetAuthorizationToken"]
-          Resource = "*"
-        },
-        {
-          Sid    = "ECRPull"
-          Effect = "Allow"
-          Action = [
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:BatchGetImage"
-          ]
-          Resource = var.ecr_repository_arn
-        },
-        {
-          Sid      = "ECRDescribe"
-          Effect   = "Allow"
-          Action   = ["ecr:DescribeRepositories"]
-          Resource = var.ecr_repository_arn
-        }
-      ] : [],
-      []
-    )
-  })
-
+resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistryReadOnly" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.node_group.name
 }
 
-# CloudWatch Log Group for EKS
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/aws/eks/${var.cluster_name}/cluster"
   retention_in_days = var.log_retention_days
@@ -105,7 +68,6 @@ resource "aws_cloudwatch_log_group" "this" {
   tags = var.tags
 }
 
-# EKS Cluster
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   version  = var.kubernetes_version
@@ -146,12 +108,34 @@ resource "aws_eks_cluster" "this" {
   }
 }
 
-# EKS Managed Add-ons (core)
-resource "aws_eks_addon" "core" {
-  for_each = var.managed_addons_enabled ? toset(var.managed_addons) : toset([])
+moved {
+  from = aws_eks_addon.core["coredns"]
+  to   = aws_eks_addon.post_node["coredns"]
+}
+
+moved {
+  from = aws_eks_addon.pre_node["kube-proxy"]
+  to   = aws_eks_addon.kube_proxy[0]
+}
+
+moved {
+  from = aws_eks_addon.pre_node["vpc-cni"]
+  to   = aws_eks_addon.vpc_cni[0]
+}
+
+locals {
+  pre_node_has_kube_proxy = var.managed_addons_enabled && contains(var.managed_addons_pre_node, "kube-proxy")
+  pre_node_has_vpc_cni    = var.managed_addons_enabled && contains(var.managed_addons_pre_node, "vpc-cni")
+  pre_node_other = var.managed_addons_enabled ? [
+    for a in var.managed_addons_pre_node : a if !contains(["kube-proxy", "vpc-cni"], a)
+  ] : []
+}
+
+resource "aws_eks_addon" "kube_proxy" {
+  count = local.pre_node_has_kube_proxy ? 1 : 0
 
   cluster_name = aws_eks_cluster.this.name
-  addon_name   = each.value
+  addon_name   = "kube-proxy"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -159,7 +143,37 @@ resource "aws_eks_addon" "core" {
   depends_on = [aws_eks_cluster.this]
 }
 
-# EKS Node Group
+resource "aws_eks_addon" "vpc_cni" {
+  count = local.pre_node_has_vpc_cni ? 1 : 0
+
+  cluster_name = aws_eks_cluster.this.name
+  addon_name   = "vpc-cni"
+
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_cluster.this,
+    aws_eks_addon.kube_proxy,
+  ]
+}
+
+resource "aws_eks_addon" "pre_node_other" {
+  for_each = toset(local.pre_node_other)
+
+  cluster_name = aws_eks_cluster.this.name
+  addon_name   = each.value
+
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_cluster.this,
+    aws_eks_addon.kube_proxy,
+    aws_eks_addon.vpc_cni,
+  ]
+}
+
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = var.default_node_group_name
@@ -196,7 +210,10 @@ resource "aws_eks_node_group" "this" {
   depends_on = [
     aws_iam_role_policy_attachment.node_group_AmazonEKSWorkerNodePolicy,
     aws_iam_role_policy_attachment.node_group_AmazonEKS_CNI_Policy,
-    aws_eks_addon.core,
+    aws_iam_role_policy_attachment.node_group_AmazonEC2ContainerRegistryReadOnly,
+    aws_eks_addon.kube_proxy,
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.pre_node_other,
   ]
 
   lifecycle {
@@ -206,7 +223,18 @@ resource "aws_eks_node_group" "this" {
   }
 }
 
-# OIDC Provider for IAM Roles for Service Accounts (IRSA)
+resource "aws_eks_addon" "post_node" {
+  for_each = var.managed_addons_enabled ? toset(var.managed_addons_post_node) : toset([])
+
+  cluster_name = aws_eks_cluster.this.name
+  addon_name   = each.value
+
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.this]
+}
+
 data "tls_certificate" "this" {
   url = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
